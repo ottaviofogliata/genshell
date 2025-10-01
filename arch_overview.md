@@ -4,6 +4,9 @@ GenShell is a native shell application built Ground-Up in C. This approach ensur
 
 The architecture is now designed for a Pure CLI experience, focusing on efficiency and speed, where the AI output is injected directly into the standard terminal input/output flow.
 
+**We will actively explore new modes of interactions** such as the idea of a Visual Context Injector Module that captures and interprets the user's physical gestures via video camera to dynamically enrich the LLM prompt, or a simple double enter to accept then execute command.
+
+
 ## Modular Architecture and AI Flow
 
 | Module               | Primary Responsibility                                                                     | Language |
