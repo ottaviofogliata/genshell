@@ -42,12 +42,12 @@ void backend_init_once(bool use_numa) {
     });
 }
 
-int32_t resolve_seed(int32_t seed) {
+uint32_t resolve_seed(int32_t seed) {
     if (seed >= 0) {
-        return seed;
+        return static_cast<uint32_t>(seed);
     }
     auto now = std::chrono::high_resolution_clock::now();
-    return static_cast<int32_t>(now.time_since_epoch().count() & 0x7fffffff);
+    return static_cast<uint32_t>(now.time_since_epoch().count() & 0xffffffffu);
 }
 
 }  // namespace
@@ -118,14 +118,13 @@ int gemma_llama_init(const char *model_path,
     mparams.use_mmap = rt.use_mmap != 0;
     mparams.use_mlock = rt.use_mlock != 0;
 
-    llama_model *model = llama_load_model_from_file(model_path, mparams);
+    llama_model *model = llama_model_load_from_file(model_path, mparams);
     if (!model) {
         copy_error("failed to load GGUF model", errbuf, errbuf_size);
         return -1;
     }
 
     llama_context_params cparams = llama_context_default_params();
-    cparams.seed = resolve_seed(rt.seed);
     if (rt.n_ctx > 0) {
         cparams.n_ctx = rt.n_ctx;
     }
@@ -137,9 +136,9 @@ int gemma_llama_init(const char *model_path,
         cparams.n_threads_batch = rt.n_threads;
     }
 
-    llama_context *ctx = llama_new_context_with_model(model, cparams);
+    llama_context *ctx = llama_init_from_model(model, cparams);
     if (!ctx) {
-        llama_free_model(model);
+        llama_model_free(model);
         copy_error("failed to create llama context", errbuf, errbuf_size);
         return -1;
     }
@@ -147,7 +146,7 @@ int gemma_llama_init(const char *model_path,
     auto *handle = new (std::nothrow) gemma_llama_context();
     if (!handle) {
         llama_free(ctx);
-        llama_free_model(model);
+        llama_model_free(model);
         copy_error("failed to allocate context", errbuf, errbuf_size);
         return -1;
     }
@@ -182,135 +181,156 @@ int gemma_llama_generate(gemma_llama_t *ctx,
     const int32_t repeat_last_n = smp.repetition_last_n > 0 ? smp.repetition_last_n : 128;
     const float repeat_penalty = smp.repetition_penalty > 0.0f ? smp.repetition_penalty : 1.0f;
 
-    llama_kv_cache_clear(ctx->ctx);
+    llama_memory_clear(llama_get_memory(ctx->ctx), true);
 
-    const int32_t prompt_len = llama_tokenize(ctx->model, prompt, std::strlen(prompt), nullptr, 0, true, false);
+    const llama_vocab *vocab = llama_model_get_vocab(ctx->model);
+    if (!vocab) {
+        copy_error("failed to access vocabulary", errbuf, errbuf_size);
+        return -1;
+    }
+
+    const size_t prompt_len_bytes = std::strlen(prompt);
+    int32_t prompt_len = llama_tokenize(vocab, prompt, static_cast<int32_t>(prompt_len_bytes), nullptr, 0, true, true);
+    if (prompt_len < 0) {
+        prompt_len = -prompt_len;
+    }
     if (prompt_len <= 0) {
         copy_error("failed to tokenize prompt", errbuf, errbuf_size);
         return -1;
     }
-    if (prompt_len >= ctx->runtime.n_ctx) {
+
+    const uint32_t ctx_limit = llama_n_ctx(ctx->ctx);
+    if (static_cast<uint32_t>(prompt_len) >= ctx_limit) {
         copy_error("prompt is longer than context window", errbuf, errbuf_size);
         return -1;
     }
 
-    std::vector<llama_token> input_tokens(prompt_len);
-    llama_tokenize(ctx->model, prompt, std::strlen(prompt), input_tokens.data(), prompt_len, true, false);
+    std::vector<llama_token> prompt_tokens(static_cast<size_t>(prompt_len));
+    if (llama_tokenize(vocab,
+                       prompt,
+                       static_cast<int32_t>(prompt_len_bytes),
+                       prompt_tokens.data(),
+                       prompt_len,
+                       true,
+                       true) < 0) {
+        copy_error("failed to tokenize prompt", errbuf, errbuf_size);
+        return -1;
+    }
 
-    const int32_t n_batch = ctx->runtime.n_batch > 0 ? ctx->runtime.n_batch : 512;
-    llama_batch batch = llama_batch_init(n_batch, 0, 1);
-    int32_t n_past = 0;
+    auto chain_params = llama_sampler_chain_default_params();
+    chain_params.no_perf = false;
+    llama_sampler *sampler = llama_sampler_chain_init(chain_params);
+    if (!sampler) {
+        copy_error("failed to initialize sampler", errbuf, errbuf_size);
+        return -1;
+    }
 
-    while (n_past < prompt_len) {
-        const int32_t n_eval = std::min(n_batch, prompt_len - n_past);
-        llama_batch_clear(&batch);
-        for (int32_t i = 0; i < n_eval; ++i) {
-            batch.token[i] = input_tokens[n_past + i];
-            batch.pos[i] = n_past + i;
-            batch.seq_id[i][0] = 0;
-        }
-        batch.n_tokens = n_eval;
-        if (llama_decode(ctx->ctx, batch) != 0) {
-            llama_batch_free(batch);
-            copy_error("llama_decode failed during prompt", errbuf, errbuf_size);
+    if (repeat_last_n > 0 && repeat_penalty > 1.0f) {
+        llama_sampler *penalties = llama_sampler_init_penalties(repeat_last_n, repeat_penalty, 0.0f, 0.0f);
+        if (!penalties) {
+            llama_sampler_free(sampler);
+            copy_error("failed to initialise repetition penalty sampler", errbuf, errbuf_size);
             return -1;
         }
-        n_past += n_eval;
+        llama_sampler_chain_add(sampler, penalties);
+    }
+    if (smp.top_k > 0) {
+        llama_sampler *top_k = llama_sampler_init_top_k(smp.top_k);
+        if (!top_k) {
+            llama_sampler_free(sampler);
+            copy_error("failed to initialise top-k sampler", errbuf, errbuf_size);
+            return -1;
+        }
+        llama_sampler_chain_add(sampler, top_k);
+    }
+    if (smp.top_p > 0.0f && smp.top_p < 1.0f) {
+        llama_sampler *top_p = llama_sampler_init_top_p(smp.top_p, 1);
+        if (!top_p) {
+            llama_sampler_free(sampler);
+            copy_error("failed to initialise top-p sampler", errbuf, errbuf_size);
+            return -1;
+        }
+        llama_sampler_chain_add(sampler, top_p);
+    }
+    if (smp.temperature <= 0.0f) {
+        llama_sampler *greedy = llama_sampler_init_greedy();
+        if (!greedy) {
+            llama_sampler_free(sampler);
+            copy_error("failed to initialise greedy sampler", errbuf, errbuf_size);
+            return -1;
+        }
+        llama_sampler_chain_add(sampler, greedy);
+    } else {
+        llama_sampler *temp = llama_sampler_init_temp(smp.temperature);
+        if (!temp) {
+            llama_sampler_free(sampler);
+            copy_error("failed to initialise temperature sampler", errbuf, errbuf_size);
+            return -1;
+        }
+        llama_sampler_chain_add(sampler, temp);
+
+        const uint32_t sampler_seed = resolve_seed(ctx->runtime.seed);
+        llama_sampler *dist = llama_sampler_init_dist(sampler_seed);
+        if (!dist) {
+            llama_sampler_free(sampler);
+            copy_error("failed to initialise distribution sampler", errbuf, errbuf_size);
+            return -1;
+        }
+        llama_sampler_chain_add(sampler, dist);
     }
 
-    std::vector<llama_token> recent_tokens;
-    if (repeat_last_n > 0) {
-        size_t take = static_cast<size_t>(std::min<int32_t>(repeat_last_n, prompt_len));
-        recent_tokens.insert(recent_tokens.end(),
-                             input_tokens.end() - take,
-                             input_tokens.end());
-    }
+    llama_sampler_reset(sampler);
 
-    const int32_t vocab = llama_n_vocab(ctx->model);
-    std::vector<llama_token_data> candidates;
-    candidates.reserve(vocab);
+    llama_batch batch = llama_batch_get_one(prompt_tokens.data(), static_cast<int32_t>(prompt_tokens.size()));
 
     bool aborted = false;
+    llama_token new_token = 0;
+    bool prompt_history_added = false;
 
-    for (int32_t iter = 0; iter < max_new; ++iter) {
-        const float *logits = llama_get_logits(ctx->ctx);
-        if (!logits) {
-            copy_error("logits unavailable", errbuf, errbuf_size);
-            llama_batch_free(batch);
+    for (int32_t generated = 0; generated < max_new; ++generated) {
+        if (llama_decode(ctx->ctx, batch) != 0) {
+            llama_sampler_free(sampler);
+            copy_error("llama_decode failed", errbuf, errbuf_size);
             return -1;
         }
 
-        candidates.clear();
-        for (int32_t token_id = 0; token_id < vocab; ++token_id) {
-            candidates.push_back({token_id, logits[token_id], 0.0f});
-        }
-        llama_token_data_array cand_array{candidates.data(), candidates.size(), false};
-
-        if (repeat_last_n > 0 && repeat_penalty > 1.0f && !recent_tokens.empty()) {
-            llama_sample_repetition_penalty(ctx->ctx,
-                                            &cand_array,
-                                            recent_tokens.data(),
-                                            recent_tokens.size(),
-                                            repeat_penalty);
-        }
-        if (smp.top_k > 0) {
-            llama_sample_top_k(ctx->ctx, &cand_array, smp.top_k, 1);
-        }
-        if (smp.top_p > 0.0f && smp.top_p < 1.0f) {
-            llama_sample_top_p(ctx->ctx, &cand_array, smp.top_p, 1);
-        }
-
-        llama_token selected;
-        if (smp.temperature <= 0.0f) {
-            selected = llama_sample_token_greedy(ctx->ctx, &cand_array);
-        } else {
-            llama_sample_temperature(ctx->ctx, &cand_array, smp.temperature);
-            selected = llama_sample_token(ctx->ctx, &cand_array);
-        }
-
-        if (repeat_last_n > 0) {
-            if (recent_tokens.size() >= static_cast<size_t>(repeat_last_n)) {
-                recent_tokens.erase(recent_tokens.begin());
+        if (!prompt_history_added) {
+            for (llama_token token : prompt_tokens) {
+                llama_sampler_accept(sampler, token);
             }
-            recent_tokens.push_back(selected);
+            prompt_history_added = true;
         }
 
-        if (selected == llama_token_eos(ctx->model)) {
+        llama_token candidate = llama_sampler_sample(sampler, ctx->ctx, -1);
+        if (llama_vocab_is_eog(vocab, candidate)) {
             break;
         }
 
         char piece[512];
-        int32_t piece_len = llama_token_to_piece(ctx->model, selected, piece, sizeof(piece));
-        std::string token_text;
-        if (piece_len > 0) {
-            token_text.assign(piece, static_cast<size_t>(piece_len));
+        int piece_len = llama_token_to_piece(vocab, candidate, piece, sizeof(piece), 0, true);
+        if (piece_len < 0) {
+            llama_sampler_free(sampler);
+            copy_error("failed to convert token to text", errbuf, errbuf_size);
+            return -1;
         }
-        if (on_token) {
+
+        if (on_token && piece_len > 0) {
+            std::string token_text(piece, piece_len);
             if (!on_token(token_text.c_str(), user_data)) {
                 aborted = true;
                 break;
             }
         }
 
-        llama_batch_clear(&batch);
-        batch.token[0] = selected;
-        batch.pos[0] = n_past;
-        batch.seq_id[0][0] = 0;
-        batch.n_tokens = 1;
-        if (llama_decode(ctx->ctx, batch) != 0) {
-            llama_batch_free(batch);
-            copy_error("llama_decode failed during sampling", errbuf, errbuf_size);
-            return -1;
-        }
-        ++n_past;
+        llama_sampler_accept(sampler, candidate);
+
+        new_token = candidate;
+        batch = llama_batch_get_one(&new_token, 1);
     }
 
-    llama_batch_free(batch);
+    llama_sampler_free(sampler);
 
-    if (aborted) {
-        return 1;
-    }
-    return 0;
+    return aborted ? 1 : 0;
 }
 
 void gemma_llama_free(gemma_llama_t *ctx) {
@@ -318,7 +338,7 @@ void gemma_llama_free(gemma_llama_t *ctx) {
         return;
     }
     llama_free(ctx->ctx);
-    llama_free_model(ctx->model);
+    llama_model_free(ctx->model);
     delete ctx;
     if (g_active_contexts.fetch_sub(1, std::memory_order_relaxed) == 1) {
         llama_backend_free();

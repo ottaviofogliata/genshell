@@ -18,13 +18,20 @@ git submodule update --init --recursive
 Feel free to use a different checkout of llama.cpp; just adjust include/library paths accordingly.
 
 ## 2. Build llama.cpp Tools
-1. From the GenShell repo root, step into the bundled llama.cpp sources and build the core library plus helper binaries:
-   ```bash
-   cd deps/llama.cpp
-   cmake -S . -B build -DLLAMA_METAL=on    # drop -DLLAMA_METAL if you are on Linux/Windows
-   cmake --build build --target llama llama-quantize
-   ```
-   This produces `build/libllama.a`, the `quantize` tool, and all required headers under the submodule.
+1. From the GenShell repo root, step into the bundled llama.cpp sources and build the core library plus helper binaries.
+   - **macOS (Metal):**
+     ```bash
+     cd deps/llama.cpp
+     cmake -S . -B build -DGGML_METAL=ON -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release
+     cmake --build build --target llama llama-quantize
+     ```
+   - **Linux / Windows (CPU-only):**
+     ```bash
+     cd deps/llama.cpp
+     cmake -S . -B build -DGGML_METAL=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release
+     cmake --build build --target llama llama-quantize
+     ```
+   Building with `BUILD_SHARED_LIBS=OFF` produces the static library `build/src/libllama.a`, the `llama-quantize` tool, and all required headers so you can ship a single self-contained binary.
 
 ## 3. Prepare a Gemma 3 GGUF Checkpoint
 Stay inside `deps/llama.cpp` (or return to it before running these commands).
@@ -69,22 +76,42 @@ Stay inside `deps/llama.cpp` (or return to it before running these commands).
 From the GenShell repo root (run `cd ../..` if you are still inside `deps/llama.cpp`):
 ```bash
 mkdir -p bin
+
+# macOS + Metal (static)
 clang++ -std=c++20 \
-    -Iinclude -I"deps/llama.cpp" \
+    -Iinclude -I"deps/llama.cpp" -I"deps/llama.cpp/include" -I"deps/llama.cpp/ggml/include" \
     src/gemma_llama.cpp src/gemma_cli.c \
-    -L"deps/llama.cpp/build" -lllama \
+    deps/llama.cpp/build/src/libllama.a \
+    deps/llama.cpp/build/ggml/src/libggml.a \
+    deps/llama.cpp/build/ggml/src/libggml-base.a \
+    deps/llama.cpp/build/ggml/src/libggml-cpu.a \
+    deps/llama.cpp/build/ggml/src/ggml-blas/libggml-blas.a \
+    deps/llama.cpp/build/ggml/src/ggml-metal/libggml-metal.a \
     -framework Accelerate -framework Metal -framework MetalKit \
+    -framework Foundation -framework QuartzCore -lobjc \
     -o bin/gemma_cli
+
+# Linux / Windows (CPU-only example)
+clang++ -std=c++20 \
+    -Iinclude -I"deps/llama.cpp" -I"deps/llama.cpp/include" -I"deps/llama.cpp/ggml/include" \
+    src/gemma_llama.cpp src/gemma_cli.c \
+    deps/llama.cpp/build/src/libllama.a \
+    deps/llama.cpp/build/ggml/src/libggml.a \
+    deps/llama.cpp/build/ggml/src/libggml-base.a \
+    deps/llama.cpp/build/ggml/src/libggml-cpu.a \
+    deps/llama.cpp/build/ggml/src/ggml-blas/libggml-blas.a \
+    -lpthread -ldl -o bin/gemma_cli
 ```
-- Drop the `-framework` flags on Linux; add `-fopenmp` or `-pthread` if your llama.cpp build requires them.
-- If you built a shared library instead, replace `-L/-lllama` with the shared object path.
+- On macOS the extra Objective‑C runtimes (`-framework Foundation`, `-framework QuartzCore`, `-lobjc`) are required when statically linking the Metal backend.
+- On Linux/Windows drop the Apple frameworks and add whatever threading/math libraries your toolchain expects (the example uses `-lpthread -ldl`).
+- If you built shared libraries instead, replace the direct `.a` references with the appropriate `-L/-l` pairs.
 
 ### Using CMake (optional)
 If you prefer CMake, add llama.cpp as an external project or set `LLAMA_ROOT` and create a simple `CMakeLists.txt` that links against `llama`. The manual compile above is sufficient for prototyping.
 
 ## 5. Run the Model
 ```bash
-./bin/gemma_cli models/gemma-3-4b-it-q4_K_M.gguf "List three creative shell automation ideas."
+./bin/gemma_cli models/gemma-3-4b-it-q4_K_M "List three creative shell automation ideas."
 ```
 - First argument: path to your GGUF file. Defaults to `models/gemma-3-text-4b-it-4bit.gguf` if omitted; point it to the f16 file if you skipped quantization.
 - Second argument: optional prompt string. Without it, the CLI prints a usage hint and falls back to a sample prompt.
