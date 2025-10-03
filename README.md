@@ -17,52 +17,62 @@ git submodule update --init --recursive
 
 Feel free to use a different checkout of llama.cpp; just adjust include/library paths accordingly.
 
-## 2. Prepare a Gemma 3 GGUF Checkpoint
-1. Enter the bundled llama.cpp sources (or substitute your own checkout):
+## 2. Build llama.cpp Tools
+1. From the GenShell repo root, step into the bundled llama.cpp sources and build the core library plus helper binaries:
    ```bash
    cd deps/llama.cpp
+   cmake -S . -B build -DLLAMA_METAL=on    # drop -DLLAMA_METAL if you are on Linux/Windows
+   cmake --build build --target llama llama-quantize
    ```
-2. Pull the Gemma weights you care about (examples below use Google's instruction-tuned Gemma 3 4B). The Hugging Face CLI is convenient:
-   ```bash
-   python3 -m pip install -r requirements.txt --break-system-packages   
-   huggingface-cli download google/gemma-3-4b-it --include "*"
-   ```
-   Alternatively, place the model directory anywhere on disk and reference it during conversion.
-3. Convert to GGUF:
-   ```bash
-   python3 ./convert-hf-to-gguf.py \
-       /path/to/google/gemma-3-4b-it \
-       --outfile ../../models/gemma-3-4b-it-f16.gguf \
-       --outtype f16
-   ```
-   - Supported `--outtype` values in llama.cpp (pick the smallest that still meets your quality needs):
-     - `f32`, `f16`, `bf16` – full or half precision; highest quality, largest files.
-     - `q8_0`, `q6_k`, `q5_0`, `q5_1` – high fidelity 8/6/5‑bit quantizations that still need sizable VRAM/RAM.
-     - `q4_0`, `q4_1`, `q4_K_M`, `q4_K_S`, `q4_K_L` – balanced 4‑bit modes; good trade-off for Apple Silicon Metal.
-     - `q3_K_M`, `q3_K_L`, `q3_K_S` – aggressive 3‑bit options when memory is tight; expect some quality loss.
-     - `q2_K`, `q2_K_S`, `q2_K_L` – ultra-compact 2‑bit variants for experimentation or low-resource devices.
-   - For Gemma 4B on M-series Macs, `f16` or `q4_K_M` typically strike the right quality/performance balance.
-   - Store the resulting `.gguf` under `genshell/models/` (or adjust paths when running the CLI).
+   This produces `build/libllama.a`, the `quantize` tool, and all required headers under the submodule.
 
-## 3. Build llama.cpp as a Library
-1. From the llama.cpp directory:
+## 3. Prepare a Gemma 3 GGUF Checkpoint
+Stay inside `deps/llama.cpp` (or return to it before running these commands).
+
+1. Download the Gemma weights (example uses Google's 4B instruction-tuned release):
    ```bash
-   cmake -S . -B build -DLLAMA_METAL=on         # drop -DLLAMA_METAL if you are on Linux/Windows
-   cmake --build build --target llama
+   python3 -m pip install -r requirements.txt
+   hf download google/gemma-3-4b-it --include "*" \
+       --local-dir ../../models/gemma-3-4b-it \
+       --local-dir-use-symlinks False
+   # The weights now live in genshell/models/gemma-3-4b-it
    ```
-   This produces `build/libllama.a` (static) plus headers under the repo root.
-2. Note the absolute paths (adjust if your checkout lives elsewhere):
-   - `LLAMA_INC="$(pwd)/deps/llama.cpp"`
-   - `LLAMA_LIB="$(pwd)/deps/llama.cpp/build"`
+2. Convert to a float16 GGUF base file:
+   ```bash
+   python3 ./convert_hf_to_gguf.py \
+       ../../models/gemma-3-4b-it \
+       --outfile ../../models/gemma-3-4b-it-f16.gguf \
+       --outtype f16 \
+       --model-name gemma
+   ```
+   - `--model-name gemma` nudges the converter toward the correct architecture.
+   - `--outtype f16` preserves fidelity before any quantization step.
+3. (Optional) Quantize the exported model with the tool you just built:
+   ```bash
+   ./build/bin/llama-quantize \
+       ../../models/gemma-3-4b-it-f16.gguf \
+       ../../models/gemma-3-4b-it-q4_K_M.gguf \
+       q4_K_M
+   ```
+   - Choose a quantization scheme that matches your memory/perf budget:
+     - `q8_0`, `q6_k`, `q5_0`, `q5_1` – high fidelity 8/6/5-bit formats.
+     - `q4_0`, `q4_1`, `q4_K_M`, `q4_K_S`, `q4_K_L` – balanced 4-bit options (ideal on Apple Silicon).
+     - `q3_K_M`, `q3_K_L`, `q3_K_S` – aggressive 3-bit variants when memory is tight.
+     - `q2_K`, `q2_K_S`, `q2_K_L` – ultra-compact 2-bit variants for experimentation.
+   - Quantization naming notes:
+     - `q4_0`/`q4_1` are legacy layouts; `q4_1` keeps a bias term for better quality.
+     - `q4_K_*` formats use the newer K-block layout; `K_M` (medium) is the usual sweet spot, `K_S` favors size, `K_L` maximizes fidelity.
+     - `_K` variants tend to outperform `_0/_1` on Metal thanks to better vectorization.
+   - For Gemma 4B on M-series Macs, `f16` or `q4_K_M` typically balance quality and speed.
 
 ## 4. Build the Gemma CLI
-From the GenShell repo root:
+From the GenShell repo root (run `cd ../..` if you are still inside `deps/llama.cpp`):
 ```bash
 mkdir -p bin
 clang++ -std=c++20 \
-    -Iinclude -I"$LLAMA_INC" \
+    -Iinclude -I"deps/llama.cpp" \
     src/gemma_llama.cpp src/gemma_cli.c \
-    -L"$LLAMA_LIB" -lllama \
+    -L"deps/llama.cpp/build" -lllama \
     -framework Accelerate -framework Metal -framework MetalKit \
     -o bin/gemma_cli
 ```
@@ -74,9 +84,9 @@ If you prefer CMake, add llama.cpp as an external project or set `LLAMA_ROOT` an
 
 ## 5. Run the Model
 ```bash
-./bin/gemma_cli models/gemma-3-4b-it-f16.gguf "List three creative shell automation ideas."
+./bin/gemma_cli models/gemma-3-4b-it-q4_K_M.gguf "List three creative shell automation ideas."
 ```
-- First argument: path to your GGUF file. Defaults to `models/gemma-3-text-4b-it-4bit.gguf` if omitted.
+- First argument: path to your GGUF file. Defaults to `models/gemma-3-text-4b-it-4bit.gguf` if omitted; point it to the f16 file if you skipped quantization.
 - Second argument: optional prompt string. Without it, the CLI prints a usage hint and falls back to a sample prompt.
 - Output streams token-by-token to STDOUT; STDERR surfaces errors (missing model, decode failure, etc.).
 
