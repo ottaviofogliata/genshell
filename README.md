@@ -74,9 +74,11 @@ Stay inside `deps/llama.cpp` (or return to it before running these commands).
 
 ## 4. Build the Gemma CLI
 From the GenShell repo root (run `cd ../..` if you are still inside `deps/llama.cpp`):
+
+### MacOS
+
 ```bash
 
-# macOS + Metal (static): compila separatamente C e C++, poi linka
 clang  -std=c17  \
     -Iinclude -I"deps/llama.cpp" -I"deps/llama.cpp/include" -I"deps/llama.cpp/ggml/include" \
     -c src/gemma_cli.c -o build/obj/gemma_cli.o
@@ -94,8 +96,12 @@ clang++ -std=c++20 \
     -framework Accelerate -framework Metal -framework MetalKit \
     -framework Foundation -framework QuartzCore -lobjc \
     -o bin/gemma_cli
+```
 
-# Linux / Windows (CPU-only): compila separatamente C e C++, poi linka
+### Linux / Windows
+
+```bash
+
 clang  -std=c17  \
     -Iinclude -I"deps/llama.cpp" -I"deps/llama.cpp/include" -I"deps/llama.cpp/ggml/include" \
     -c src/gemma_cli.c -o build/obj/gemma_cli.o
@@ -120,7 +126,7 @@ If you prefer CMake, add llama.cpp as an external project or set `LLAMA_ROOT` an
 
 ## 5. Run the Model
 ```bash
-./bin/gemma_cli models/gemma-3-4b-it-q4_K_M "List three creative shell automation ideas."
+./bin/gemma_cli models/gemma-3-4b-it-q4_K_M.gguf "List three creative shell automation ideas."
 ```
 - First argument: path to your GGUF file. Defaults to `models/gemma-3-text-4b-it-4bit.gguf` if omitted; point it to the f16 file if you skipped quantization.
 - Second argument: optional prompt string. Without it, the CLI prints a usage hint and falls back to a sample prompt.

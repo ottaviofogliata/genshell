@@ -1,0 +1,15 @@
+#!/bin/bash
+clang  -std=c17  \
+    -Iinclude -I"deps/llama.cpp" -I"deps/llama.cpp/include" -I"deps/llama.cpp/ggml/include" \
+    -c src/gemma_cli.c -o build/obj/gemma_cli.o
+clang++ -std=c++20 \
+    -Iinclude -I"deps/llama.cpp" -I"deps/llama.cpp/include" -I"deps/llama.cpp/ggml/include" \
+    -c src/gemma_llama.cpp -o build/obj/gemma_llama.o
+clang++ -std=c++20 \
+    build/obj/gemma_llama.o build/obj/gemma_cli.o \
+    deps/llama.cpp/build/src/libllama.a \
+    deps/llama.cpp/build/ggml/src/libggml.a \
+    deps/llama.cpp/build/ggml/src/libggml-base.a \
+    deps/llama.cpp/build/ggml/src/libggml-cpu.a \
+    deps/llama.cpp/build/ggml/src/ggml-blas/libggml-blas.a \
+    -lpthread -ldl -o bin/gemma_cli

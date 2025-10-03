@@ -37,6 +37,7 @@ int main(int argc, char **argv) {
 
     gemma_runtime_config runtime;
     gemma_default_runtime(&runtime);
+    runtime.n_gpu_layers = 999;  /* 999 means offloads all */
     runtime.n_threads = 0;  /* let llama.cpp auto-detect */
 
     gemma_llama_t *ctx = NULL;
@@ -48,7 +49,7 @@ int main(int argc, char **argv) {
 
     gemma_sampling_config sampling;
     gemma_default_sampling(&sampling);
-    sampling.max_new_tokens = 128;
+    sampling.max_new_tokens = 2048;
 
     fprintf(stdout, "Model: %s\nPrompt: %s\n---\n", model_path, prompt);
     int rc = gemma_llama_generate(ctx, prompt, &sampling, stdout_token_callback, NULL, errbuf, sizeof errbuf);

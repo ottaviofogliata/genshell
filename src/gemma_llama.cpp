@@ -125,6 +125,9 @@ int gemma_llama_init(const char *model_path,
     }
 
     llama_context_params cparams = llama_context_default_params();
+
+    cparams.offload_kqv = true; // offload KQV to GPU if possible
+
     if (rt.n_ctx > 0) {
         cparams.n_ctx = rt.n_ctx;
     }
