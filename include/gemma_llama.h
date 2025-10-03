@@ -36,6 +36,12 @@ typedef struct {
     int32_t numa;         /* enable NUMA optimisations when >0 */
 } gemma_runtime_config;
 
+/** Lightweight mapping between a string and a bias value. */
+typedef struct {
+    const char *text;
+    float bias;
+} gemma_logit_bias_entry;
+
 /**
  * Sampling behaviour tweaks for text generation.
  */
@@ -46,6 +52,12 @@ typedef struct {
     int32_t top_k;             /* <=0 disables, default 40 */
     float repetition_penalty;  /* >=1, default 1.1 */
     int32_t repetition_last_n; /* <=0 defaults to 128 */
+    float frequency_penalty;   /* >0 discourages frequency; default 0 (disabled) */
+    float presence_penalty;    /* >0 encourages new tokens; default 0 (disabled) */
+    float min_p;               /* nucleus floor (0 disables) */
+    float typical_p;           /* typical sampling (0 disables) */
+    const gemma_logit_bias_entry *logit_biases; /* optional logit biases */
+    size_t num_logit_biases;    /* entries in logit_biases */
 } gemma_sampling_config;
 
 /**

@@ -10,6 +10,7 @@
 #include <new>
 #include <string>
 #include <vector>
+#include <cstdlib>
 
 namespace {
 
@@ -84,6 +85,12 @@ void gemma_default_sampling(gemma_sampling_config *cfg) {
     cfg->top_k = 40;
     cfg->repetition_penalty = 1.1f;
     cfg->repetition_last_n = 128;
+    cfg->frequency_penalty = 0.0f;
+    cfg->presence_penalty = 0.0f;
+    cfg->min_p = 0.0f;
+    cfg->typical_p = 0.0f;
+    cfg->logit_biases = NULL;
+    cfg->num_logit_biases = 0;
 }
 
 int gemma_llama_init(const char *model_path,
@@ -117,6 +124,7 @@ int gemma_llama_init(const char *model_path,
     mparams.progress_callback = nullptr;
     mparams.use_mmap = rt.use_mmap != 0;
     mparams.use_mlock = rt.use_mlock != 0;
+    mparams.check_tensors = false; // skip tensor checks for performance
 
     llama_model *model = llama_model_load_from_file(model_path, mparams);
     if (!model) {
@@ -125,8 +133,8 @@ int gemma_llama_init(const char *model_path,
     }
 
     llama_context_params cparams = llama_context_default_params();
-
-    cparams.offload_kqv = true; // offload KQV to GPU if possible
+    cparams.offload_kqv = true; // offload KV cache to GPU
+    cparams.n_ubatch = (rt.n_batch > 0 ? rt.n_batch : 512); // physical batch size
 
     if (rt.n_ctx > 0) {
         cparams.n_ctx = rt.n_ctx;
@@ -228,8 +236,12 @@ int gemma_llama_generate(gemma_llama_t *ctx,
         return -1;
     }
 
-    if (repeat_last_n > 0 && repeat_penalty > 1.0f) {
-        llama_sampler *penalties = llama_sampler_init_penalties(repeat_last_n, repeat_penalty, 0.0f, 0.0f);
+    if (repeat_last_n > 0 && (repeat_penalty > 1.0f || smp.frequency_penalty > 0.0f || smp.presence_penalty > 0.0f)) {
+        const float use_repeat_penalty = repeat_penalty > 0.0f ? repeat_penalty : 1.0f;
+        llama_sampler *penalties = llama_sampler_init_penalties(repeat_last_n,
+                                                                use_repeat_penalty,
+                                                                smp.frequency_penalty,
+                                                                smp.presence_penalty);
         if (!penalties) {
             llama_sampler_free(sampler);
             copy_error("failed to initialise repetition penalty sampler", errbuf, errbuf_size);
@@ -254,6 +266,128 @@ int gemma_llama_generate(gemma_llama_t *ctx,
             return -1;
         }
         llama_sampler_chain_add(sampler, top_p);
+    }
+    if (smp.min_p > 0.0f && smp.min_p < 1.0f) {
+        llama_sampler *min_p = llama_sampler_init_min_p(smp.min_p, 1);
+        if (!min_p) {
+            llama_sampler_free(sampler);
+            copy_error("failed to initialise min-p sampler", errbuf, errbuf_size);
+            return -1;
+        }
+        llama_sampler_chain_add(sampler, min_p);
+    }
+    if (smp.typical_p > 0.0f && smp.typical_p < 1.0f) {
+        llama_sampler *typical = llama_sampler_init_typical(smp.typical_p, 1);
+        if (!typical) {
+            llama_sampler_free(sampler);
+            copy_error("failed to initialise typical sampler", errbuf, errbuf_size);
+            return -1;
+        }
+        llama_sampler_chain_add(sampler, typical);
+    }
+
+    llama_sampler *logit_bias_sampler = nullptr;
+    llama_logit_bias *logit_bias_array = nullptr;
+    if (sampling && sampling->logit_biases && sampling->num_logit_biases > 0) {
+        size_t capacity = 0;
+        for (size_t i = 0; i < sampling->num_logit_biases; ++i) {
+            const gemma_logit_bias_entry *entry = &sampling->logit_biases[i];
+            if (!entry->text || entry->text[0] == '\0') {
+                continue;
+            }
+            int32_t need = llama_tokenize(vocab,
+                                          entry->text,
+                                          (int32_t) std::strlen(entry->text),
+                                          nullptr,
+                                          0,
+                                          true,
+                                          true);
+            if (need < 0) {
+                need = -need;
+            }
+            if (need > 0) {
+                capacity += (size_t) need;
+            }
+        }
+
+        if (capacity > 0) {
+            logit_bias_array = (llama_logit_bias *) std::malloc(sizeof(llama_logit_bias) * capacity);
+            if (!logit_bias_array) {
+                copy_error("failed to allocate logit bias array", errbuf, errbuf_size);
+                return -1;
+            }
+
+            size_t cursor = 0;
+            const llama_token bos_token = llama_vocab_bos(vocab);
+            for (size_t i = 0; i < sampling->num_logit_biases; ++i) {
+                const gemma_logit_bias_entry *entry = &sampling->logit_biases[i];
+                if (!entry->text || entry->text[0] == '\0') {
+                    continue;
+                }
+                int32_t need = llama_tokenize(vocab,
+                                              entry->text,
+                                              (int32_t) std::strlen(entry->text),
+                                              nullptr,
+                                              0,
+                                              true,
+                                              true);
+                if (need < 0) {
+                    need = -need;
+                }
+                if (need <= 0) {
+                    continue;
+                }
+
+                llama_token *tmp_tokens = (llama_token *) std::malloc(sizeof(llama_token) * (size_t) need);
+                if (!tmp_tokens) {
+                    std::free(logit_bias_array);
+                    copy_error("failed to allocate temporary token buffer", errbuf, errbuf_size);
+                    return -1;
+                }
+
+                int32_t produced = llama_tokenize(vocab,
+                                                  entry->text,
+                                                  (int32_t) std::strlen(entry->text),
+                                                  tmp_tokens,
+                                                  need,
+                                                  true,
+                                                  true);
+                if (produced < 0) {
+                    produced = -produced;
+                }
+
+                for (int32_t j = 0; j < produced; ++j) {
+                    if (tmp_tokens[j] == bos_token) {
+                        continue;
+                    }
+                    if (cursor < capacity) {
+                        logit_bias_array[cursor].token = tmp_tokens[j];
+                        logit_bias_array[cursor].bias = entry->bias;
+                        ++cursor;
+                    }
+                }
+                std::free(tmp_tokens);
+
+                if (cursor == capacity) {
+                    break;
+                }
+            }
+
+            if (cursor > 0) {
+                const int32_t n_vocab = llama_vocab_n_tokens(vocab);
+                logit_bias_sampler = llama_sampler_init_logit_bias(n_vocab,
+                                                                   (int32_t) cursor,
+                                                                   logit_bias_array);
+                if (!logit_bias_sampler) {
+                    std::free(logit_bias_array);
+                    copy_error("failed to initialise logit bias sampler", errbuf, errbuf_size);
+                    return -1;
+                }
+                llama_sampler_chain_add(sampler, logit_bias_sampler);
+            }
+
+            std::free(logit_bias_array);
+        }
     }
     if (smp.temperature <= 0.0f) {
         llama_sampler *greedy = llama_sampler_init_greedy();

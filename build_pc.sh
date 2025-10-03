@@ -1,4 +1,5 @@
 #!/bin/bash
+rm -rf build/obj 
 clang  -std=c17  \
     -Iinclude -I"deps/llama.cpp" -I"deps/llama.cpp/include" -I"deps/llama.cpp/ggml/include" \
     -c src/gemma_cli.c -o build/obj/gemma_cli.o
