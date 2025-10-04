@@ -42,6 +42,7 @@ graph TD
 - At present only manual testing and the demo CLI exist.
 - CI TODOs: unit tests for the shim, integration harness for shell + LLM pipeline, static analysis.
 - Until tests land, double-check builds on macOS (Metal) and Linux CPU before merging.
+- Keep each test file focused: add a brief file-level comment summarizing coverage and annotate individual unit tests with short descriptions so intent stays obvious.
 
 ---
 

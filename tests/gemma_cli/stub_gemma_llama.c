@@ -1,3 +1,4 @@
+/* Stub llama.cpp adapter used by CLI unit tests to avoid model dependencies. */
 #include "gemma_llama.h"
 
 #include <stdio.h>

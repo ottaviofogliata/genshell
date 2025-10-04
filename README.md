@@ -164,6 +164,6 @@ If you prefer CMake, add llama.cpp as an external project or set `LLAMA_ROOT` an
 With the GGUF ready and the CLI compiled, you can script higher-level workflows or embed the shim directly into the GenShell LLM runner module for a fully native experience.
 
 ## 8. Tests
-- The lightweight smoke suite stubs out llama.cpp and exercises `gemma_cli`'s argument handling and defaults.
+- The lightweight smoke suite stubs out llama.cpp and exercises `gemma_cli`'s argument handling, and it runs the `ctx_yaml` parser unit tests.
 - Run it from the repo root: `./tests/run_tests.sh`
 - Override toolchain parameters (e.g., `CC` or `CFLAGS`) by exporting them before invoking the script.
