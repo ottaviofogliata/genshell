@@ -55,6 +55,14 @@ graph TD
 
 ---
 
+## 6. Notes Log
+- Log all meaningful repository changes in [NOTES.md](./NOTES.md) immediately after they land.
+- Use lines shaped like `[YYYY/MM/DD HH:MM:SS] [Author] > narrative` with the newest entry at the top.
+- Capture what changed, why it changed, follow-up actions, and any context future contributors need.
+- Treat missing or vague entries as a process failure; the notes ledger is part of code review expectations.
+
+---
+
 Refer to [./.docs/refs/](./.docs/refs/) for inspiration.
 
 EOF.
