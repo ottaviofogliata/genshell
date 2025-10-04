@@ -1,0 +1,14 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  gemma-cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run gemma_cli tests
+        run: ./tests/run_tests.sh

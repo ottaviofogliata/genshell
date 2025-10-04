@@ -1,12 +1,13 @@
 #!/bin/bash
 rm -rf build/obj/*  
+mkdir -p build/obj
 
 clang  -std=c17  \
     -Iinclude -I"deps/llama.cpp" -I"deps/llama.cpp/include" -I"deps/llama.cpp/ggml/include" \
-    -c src/gemma_cli.c -o build/obj/gemma_cli.o
+    -c src/llm/gemma_cli.c -o build/obj/gemma_cli.o
 clang++ -std=c++20 \
     -Iinclude -I"deps/llama.cpp" -I"deps/llama.cpp/include" -I"deps/llama.cpp/ggml/include" \
-    -c src/gemma_llama.cpp -o build/obj/gemma_llama.o
+    -c src/llm/gemma_llama.cpp -o build/obj/gemma_llama.o
 clang++ -std=c++20 \
     build/obj/gemma_llama.o build/obj/gemma_cli.o \
     deps/llama.cpp/build/src/libllama.a \

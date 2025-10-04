@@ -1,6 +1,6 @@
 # GenShell LLaMA Runner Quickstart
 
-This guide shows how to prepare a Gemma 3 checkpoint, wire it through the llama.cpp-based shim (`include/gemma_llama.h` / `src/gemma_llama.cpp`), build the sample CLI, and stream generations back into the shell.
+This guide shows how to prepare a Gemma 3 checkpoint, wire it through the llama.cpp-based shim (`include/gemma_llama.h` / `src/llm/gemma_llama.cpp`), build the sample CLI, and stream generations back into the shell.
 
 ## 1. Prerequisites
 - Apple Silicon (Metal) or modern x86 CPU with AVX2/AVX512; adjust llama.cpp flags for your platform.
@@ -16,6 +16,22 @@ git submodule update --init --recursive
 ```
 
 Feel free to use a different checkout of llama.cpp; just adjust include/library paths accordingly.
+
+## Repository Layout
+
+```
+include/         # Public headers (exposed to the shell core)
+src/
+  kernel/        # Future REPL, parser, job control (placeholder today)
+  ctx/           # Runtime context collectors and prompt templates
+    library/
+    prompts/
+  infra/         # Low-level system plumbing (pty, fs, signals)
+  llm/           # Gemma/llama.cpp bindings and demo CLI
+tests/           # Unit and PTY integration harness stubs
+```
+
+The `llm` module currently hosts the shim (`gemma_llama.cpp`) and the demo CLI entry point (`gemma_cli.c`). Other directories carry `.gitkeep` placeholders until their respective components land.
 
 ## 2. Build llama.cpp Tools
 1. From the GenShell repo root, step into the bundled llama.cpp sources and build the core library plus helper binaries.
@@ -79,12 +95,13 @@ From the GenShell repo root (run `cd ../..` if you are still inside `deps/llama.
 
 ```bash
 
+mkdir -p build/obj
 clang  -std=c17  \
     -Iinclude -I"deps/llama.cpp" -I"deps/llama.cpp/include" -I"deps/llama.cpp/ggml/include" \
-    -c src/gemma_cli.c -o build/obj/gemma_cli.o
+    -c src/llm/gemma_cli.c -o build/obj/gemma_cli.o
 clang++ -std=c++20 \
     -Iinclude -I"deps/llama.cpp" -I"deps/llama.cpp/include" -I"deps/llama.cpp/ggml/include" \
-    -c src/gemma_llama.cpp -o build/obj/gemma_llama.o
+    -c src/llm/gemma_llama.cpp -o build/obj/gemma_llama.o
 clang++ -std=c++20 \
     build/obj/gemma_llama.o build/obj/gemma_cli.o \
     deps/llama.cpp/build/src/libllama.a \
@@ -102,12 +119,13 @@ clang++ -std=c++20 \
 
 ```bash
 
+mkdir -p build/obj
 clang  -std=c17  \
     -Iinclude -I"deps/llama.cpp" -I"deps/llama.cpp/include" -I"deps/llama.cpp/ggml/include" \
-    -c src/gemma_cli.c -o build/obj/gemma_cli.o
+    -c src/llm/gemma_cli.c -o build/obj/gemma_cli.o
 clang++ -std=c++20 \
     -Iinclude -I"deps/llama.cpp" -I"deps/llama.cpp/include" -I"deps/llama.cpp/ggml/include" \
-    -c src/gemma_llama.cpp -o build/obj/gemma_llama.o
+    -c src/llm/gemma_llama.cpp -o build/obj/gemma_llama.o
 clang++ -std=c++20 \
     build/obj/gemma_llama.o build/obj/gemma_cli.o \
     deps/llama.cpp/build/src/libllama.a \
@@ -144,3 +162,8 @@ If you prefer CMake, add llama.cpp as an external project or set `LLAMA_ROOT` an
 - **Context overflow** – the shim defaults to 4,096 tokens. Increase `runtime.n_ctx` (and ensure the model supports it) when initializing.
 
 With the GGUF ready and the CLI compiled, you can script higher-level workflows or embed the shim directly into the GenShell LLM runner module for a fully native experience.
+
+## 8. Tests
+- The lightweight smoke suite stubs out llama.cpp and exercises `gemma_cli`'s argument handling and defaults.
+- Run it from the repo root: `./tests/run_tests.sh`
+- Override toolchain parameters (e.g., `CC` or `CFLAGS`) by exporting them before invoking the script.

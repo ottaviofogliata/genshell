@@ -22,26 +22,7 @@ graph TD
 
 ---
 
-## 2. Repository Layout
-```
-...
-src/
-  kernel/        # Core shell: REPL loop, parser, job control, built-ins
-  ctx/           # Runtime context manager
-    prompts/     # YAML prompt templates consumed by C modules
-    library/     # Context collectors (cwd, history, stderr → JSON)
-  llm/           # C headers + llama.cpp bindings
-  infra/         # Low-level system layer: termios, pty, fs, signals
-include/         # Public headers (stable ABI for external use)
-deps/
-  llama.cpp/     # Embedded llama.cpp source and build (it's a git submodule)
-tests/           # Unit tests + PTY integration suites
-```
-Everything lives in `include/` or `src/` today. POSIX shell components (parser, REPL, job control) arrive in future commits and must follow the layout promised in `ARCH.md` (core/, ctx/, llm/, infra/ modules).
-
----
-
-## 3. Coding Expectations (current repo scope)
+## 2. Coding Expectations (current repo scope)
 - C files (`*.c`) compile as C17; C++ files (`*.cpp`) as C++20.
 - Follow clang-format (style file TBD). Run `clang-format` over touched files before commit.
 - No exceptions; return `0` on success, negative on failure (propagate `errno` semantics where possible).
@@ -50,21 +31,21 @@ Everything lives in `include/` or `src/` today. POSIX shell components (parser, 
 
 ---
 
-## 4. Safety & Sampling Defaults
+## 3. Safety & Sampling Defaults
 - Default prompt sampling is tuned for balanced chat (see the long comment block in `gemma_cli.c`).
 - Logit bias safety list (e.g., `rm -rf /`) lives in `gemma_cli.c`; expand or override per deployment.
 - When exposing new model features, add knobs to `gemma_sampling_config` and document them alongside the existing parameters.
 
 ---
 
-## 5. Testing & Verification
+## 4. Testing & Verification
 - At present only manual testing and the demo CLI exist.
 - CI TODOs: unit tests for the shim, integration harness for shell + LLM pipeline, static analysis.
 - Until tests land, double-check builds on macOS (Metal) and Linux CPU before merging.
 
 ---
 
-## 8. Contribution Checklist
+## 5. Contribution Checklist
 - Confirm instructions in README/ARCH remain truthful.
 - Keep llama.cpp as a clean submodule (no local edits unless upstreamed).
 - Verify `bin/gemma_cli` runs end-to-end on at least one platform.
