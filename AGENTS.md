@@ -5,6 +5,8 @@
 ## 1. Mission in One Paragraph
 GenShell is a ground-up POSIX shell written in C with an opt-in, local LLM sidecar powered by SLM (gemma 3 actually) through llama.cpp. The shell must remain fast, script-compatible, and safe even when the model is unavailable. LLM features live behind a narrow shim and never bleed into core shell responsibilities.
 
+Note for automated contributors: AI agents working on this repository must use the repository documentation in `./docs` as context for code changes, design decisions, and explanations.
+
 ### Expected User Experience: Operational Flow and LLM Contract (Pure CLI Mode)
 
 The flow is optimized for traditional terminal speed:
@@ -63,7 +65,5 @@ graph TD
 - Each entry in the log must be separated by a blank line.
 
 ---
-
-Refer to [./.docs/refs/](./.docs/refs/) for inspiration.
 
 EOF.

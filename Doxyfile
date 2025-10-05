@@ -1,0 +1,60 @@
+# Doxygen configuration for GenShell
+# Generate API reference into docs/api for MkDocs to serve alongside narrative docs.
+
+PROJECT_NAME           = "GenShell"
+OUTPUT_DIRECTORY       = docs/api
+CREATE_SUBDIRS         = NO
+
+GENERATE_LATEX         = NO
+GENERATE_XML           = NO
+GENERATE_MAN           = NO
+GENERATE_RTF           = NO
+
+INPUT                  = include src
+FILE_PATTERNS          = *.c \
+                         *.h \
+                         *.cpp
+RECURSIVE              = YES
+
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = YES
+EXTRACT_LOCAL_CLASSES  = NO
+
+FULL_PATH_NAMES        = NO
+STRIP_FROM_PATH        = .
+
+SOURCE_BROWSER         = YES
+INLINE_SOURCES         = YES
+REFERENCED_BY_RELATION = YES
+REFERENCES_RELATION    = YES
+
+WARN_IF_UNDOCUMENTED   = YES
+WARN_AS_ERROR          = NO
+WARN_LOGFILE           =
+
+GENERATE_HTML          = YES
+HTML_OUTPUT            = html
+HTML_FILE_EXTENSION    = .html
+HTML_COLORSTYLE_HUE    = 215
+HTML_DYNAMIC_SECTIONS  = YES
+
+HAVE_DOT               = YES
+DOT_IMAGE_FORMAT       = svg
+DOT_GRAPH_MAX_NODES    = 80
+DOT_TRANSPARENT        = NO
+DOT_MULTI_TARGETS      = YES
+DOT_CLEANUP            = YES
+CLASS_DIAGRAMS         = YES
+COLLABORATION_GRAPH    = YES
+GROUP_GRAPHS           = YES
+UML_LOOK               = YES
+CALL_GRAPH             = YES
+CALLER_GRAPH           = YES
+DIRECTORY_GRAPH        = YES
+DOT_GRAPH_MAX_EDGES    = 4
+
+ALIASES                = "todo=\par TODO:\n"
+
+QUIET                  = NO
+WARNINGS               = YES
