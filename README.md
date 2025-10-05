@@ -1,169 +1,97 @@
-# GenShell LLaMA Runner Quickstart
+# GenShell
 
-This guide shows how to prepare a Gemma 3 checkpoint, wire it through the llama.cpp-based shim (`include/gemma_llama.h` / `src/llm/gemma_llama.cpp`), build the sample CLI, and stream generations back into the shell.
+GenShell is a ground-up POSIX-style shell written in C with an optional local LLM sidecar powered by llama.cpp. The primary goal today is correctness and safety in the traditional REPL path; model-assisted workflows remain strictly opt-in and live behind a narrow shim.
 
 ## 1. Prerequisites
-- Apple Silicon (Metal) or modern x86 CPU with AVX2/AVX512; adjust llama.cpp flags for your platform.
-- A recent Clang or GCC with C++20 support.
-- CMake (for building llama.cpp).
-- Python 3.9+ with `pip` to run the GGUF converter.
-- `git` for fetching model weights (optional if you already have them locally).
+- Clang or GCC with C17 support (Clang is used in all helper scripts).
+- `cmake` if you plan to build the bundled `llama.cpp` extras.
+- macOS (arm64, Metal) or Linux (x86_64/arm64) – the shell itself is portable, the LLM path requires platform-specific acceleration flags.
+- Optional: Python 3.9+ and `pip` for GGUF conversion utilities, `git` for fetching model weights.
 
-This repository vendors `llama.cpp` as a submodule under `deps/llama.cpp`. If you just cloned GenShell, remember to pull it in:
+After cloning make sure the llama.cpp submodule is available when you need the LLM pieces:
 
 ```bash
 git submodule update --init --recursive
 ```
 
-Feel free to use a different checkout of llama.cpp; just adjust include/library paths accordingly.
+## 2. Building the Shell (default)
+The platform helpers now prioritise the shell executable. By default they compile `bin/genshell`; pass extra targets when you need the LLM demo.
 
-## Repository Layout
+- **macOS / Unix-like:**
+  ```bash
+  ./build_mac.sh          # builds bin/genshell
+  ./build_mac.sh all      # builds shell + bin/gemma_cli (expects llama.cpp static libs)
+  ```
+- **Linux / Windows (MSYS/WSL):**
+  ```bash
+  ./build_pc.sh           # builds bin/genshell
+  ./build_pc.sh all       # builds shell + bin/gemma_cli (expects llama.cpp static libs)
+  ```
 
+The scripts respect `CC`, `CXX`, `SHELL_CFLAGS`, `LLM_CFLAGS`, and `LLM_CXXFLAGS` if you need to override toolchains or warning levels. Object files land in `build/obj/`, and artefacts in `bin/`.
+
+To build the llama.cpp static libraries first, use the `*_complete` helpers which run CMake for you and then invoke the corresponding build script with the `all` target:
+
+```bash
+./build_mac_complete.sh   # macOS Metal toolchain + both binaries
+./build_pc_complete.sh    # CPU-only toolchain + both binaries
 ```
-include/         # Public headers (exposed to the shell core)
+
+## 3. Running GenShell
+Launch the shell directly once `bin/genshell` exists:
+
+```bash
+./bin/genshell
+```
+
+Current capabilities include:
+- Strategy-dispatched builtins (`cd`, `exit`, `pwd`, `echo`, `export`, `unset`, `umask`) held in separate translation units with documentation headers.
+- External command execution with `PATH` lookup, pipes, simple redirections, and environment/tilde expansion.
+
+Known gaps for this milestone:
+- Background jobs and job control are not implemented (pipelines always run in the foreground).
+- Only basic redirection operators are supported; descriptors such as `2>&1` and here-documents are TODO.
+- Word splitting, command substitution, arithmetic expansion, and shell functions are not yet available.
+
+## 4. Repository Layout
+```
+include/                   # Public headers shared across subsystems
 src/
-  kernel/        # Future REPL, parser, job control (placeholder today)
-  ctx/           # Runtime context collectors and prompt templates
-    library/
-    prompts/
-  infra/         # Low-level system plumbing (pty, fs, signals)
-  llm/           # Gemma/llama.cpp bindings and demo CLI
-tests/           # Unit and PTY integration harness stubs
+  kernel/
+    shell/                 # REPL, parser, executor, builtins
+  ctx/                     # Context collectors and YAML helpers
+  infra/                   # Low-level OS plumbing (placeholders)
+  llm/                     # llama.cpp shim and demo CLI
+bin/                       # Build artefacts (genshell, gemma_cli, ...)
+models/                    # GGUF checkpoints (ignored by git)
+tests/                     # Manual smoke tests and harness stubs
 ```
 
-The `llm` module currently hosts the shim (`gemma_llama.cpp`) and the demo CLI entry point (`gemma_cli.c`). Other directories carry `.gitkeep` placeholders until their respective components land.
-
-## 2. Build llama.cpp Tools
-1. From the GenShell repo root, step into the bundled llama.cpp sources and build the core library plus helper binaries.
-   - **macOS (Metal):**
-     ```bash
-     cd deps/llama.cpp
-     cmake -S . -B build -DGGML_METAL=ON -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release
-     cmake --build build --target llama llama-quantize
-     ```
-   - **Linux / Windows (CPU-only):**
-     ```bash
-     cd deps/llama.cpp
-     cmake -S . -B build -DGGML_METAL=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release
-     cmake --build build --target llama llama-quantize
-     ```
-   Building with `BUILD_SHARED_LIBS=OFF` produces the static library `build/src/libllama.a`, the `llama-quantize` tool, and all required headers so you can ship a single self-contained binary.
-
-## 3. Prepare a Gemma 3 GGUF Checkpoint
-Stay inside `deps/llama.cpp` (or return to it before running these commands).
-
-1. Download the Gemma weights (example uses Google's 4B instruction-tuned release):
-   ```bash
-   python3 -m pip install -r requirements.txt
-   hf download google/gemma-3-4b-it --include "*" \
-       --local-dir ../../models/gemma-3-4b-it \
-       --local-dir-use-symlinks False
-   # The weights now live in genshell/models/gemma-3-4b-it
-   ```
-2. Convert to a float16 GGUF base file:
-   ```bash
-   python3 ./convert_hf_to_gguf.py \
-       ../../models/gemma-3-4b-it \
-       --outfile ../../models/gemma-3-4b-it-f16.gguf \
-       --outtype f16 \
-       --model-name gemma
-   ```
-   - `--model-name gemma` nudges the converter toward the correct architecture.
-   - `--outtype f16` preserves fidelity before any quantization step.
-3. (Optional) Quantize the exported model with the tool you just built:
-   ```bash
-   ./build/bin/llama-quantize \
-       ../../models/gemma-3-4b-it-f16.gguf \
-       ../../models/gemma-3-4b-it-q4_K_M.gguf \
-       q4_K_M
-   ```
-   - Choose a quantization scheme that matches your memory/perf budget:
-     - `q8_0`, `q6_k`, `q5_0`, `q5_1` – high fidelity 8/6/5-bit formats.
-     - `q4_0`, `q4_1`, `q4_K_M`, `q4_K_S`, `q4_K_L` – balanced 4-bit options (ideal on Apple Silicon).
-     - `q3_K_M`, `q3_K_L`, `q3_K_S` – aggressive 3-bit variants when memory is tight.
-     - `q2_K`, `q2_K_S`, `q2_K_L` – ultra-compact 2-bit variants for experimentation.
-   - Quantization naming notes:
-     - `q4_0`/`q4_1` are legacy layouts; `q4_1` keeps a bias term for better quality.
-     - `q4_K_*` formats use the newer K-block layout; `K_M` (medium) is the usual sweet spot, `K_S` favors size, `K_L` maximizes fidelity.
-     - `_K` variants tend to outperform `_0/_1` on Metal thanks to better vectorization.
-   - For Gemma 4B on M-series Macs, `f16` or `q4_K_M` typically balance quality and speed.
-
-## 4. Build the Gemma CLI
-From the GenShell repo root (run `cd ../..` if you are still inside `deps/llama.cpp`):
-
-### MacOS
+## 5. Optional LLM Sidecar
+The llama.cpp-based helper (`bin/gemma_cli`) remains available for experimentation. After building the static libs (see §2) you can run:
 
 ```bash
-
-mkdir -p build/obj
-clang  -std=c17  \
-    -Iinclude -I"deps/llama.cpp" -I"deps/llama.cpp/include" -I"deps/llama.cpp/ggml/include" \
-    -c src/llm/gemma_cli.c -o build/obj/gemma_cli.o
-clang++ -std=c++20 \
-    -Iinclude -I"deps/llama.cpp" -I"deps/llama.cpp/include" -I"deps/llama.cpp/ggml/include" \
-    -c src/llm/gemma_llama.cpp -o build/obj/gemma_llama.o
-clang++ -std=c++20 \
-    build/obj/gemma_llama.o build/obj/gemma_cli.o \
-    deps/llama.cpp/build/src/libllama.a \
-    deps/llama.cpp/build/ggml/src/libggml.a \
-    deps/llama.cpp/build/ggml/src/libggml-base.a \
-    deps/llama.cpp/build/ggml/src/libggml-cpu.a \
-    deps/llama.cpp/build/ggml/src/ggml-blas/libggml-blas.a \
-    deps/llama.cpp/build/ggml/src/ggml-metal/libggml-metal.a \
-    -framework Accelerate -framework Metal -framework MetalKit \
-    -framework Foundation -framework QuartzCore -lobjc \
-    -o bin/gemma_cli
+./bin/gemma_cli models/<model>.gguf "List a few automation tasks."
 ```
 
-### Linux / Windows
+Preparing Gemma checkpoints follows the standard llama.cpp workflow:
+1. Install Python requirements inside `deps/llama.cpp` (`python3 -m pip install -r requirements.txt`).
+2. Download weights with `huggingface_hub` or your preferred tooling.
+3. Convert to GGUF via `convert_hf_to_gguf.py` and optionally quantise with `llama-quantize`.
+
+These steps mirror the upstream documentation; adjust paths or quantisation levels to fit your hardware.
+
+## 6. Development Notes
+- Keep each builtin in its own `src/kernel/shell/builtins/<name>.c` file with a descriptive comment explaining behaviour and edge cases.
+- Functions return `0` on success and negative values for internal errors (`gs_shell.h` lists the common constants). Propagate `errno` semantics where practical.
+- Run `clang-format` on touched sources before committing (the binary may not be installed on all hosts—install it when possible and reformat touched files).
+- Log meaningful repository changes in `NOTES.md` using the timestamped format described in the contributor guide.
+
+## 7. Tests & Verification
+Structured tests are still minimal. Run the smoke tests from the repo root:
 
 ```bash
-
-mkdir -p build/obj
-clang  -std=c17  \
-    -Iinclude -I"deps/llama.cpp" -I"deps/llama.cpp/include" -I"deps/llama.cpp/ggml/include" \
-    -c src/llm/gemma_cli.c -o build/obj/gemma_cli.o
-clang++ -std=c++20 \
-    -Iinclude -I"deps/llama.cpp" -I"deps/llama.cpp/include" -I"deps/llama.cpp/ggml/include" \
-    -c src/llm/gemma_llama.cpp -o build/obj/gemma_llama.o
-clang++ -std=c++20 \
-    build/obj/gemma_llama.o build/obj/gemma_cli.o \
-    deps/llama.cpp/build/src/libllama.a \
-    deps/llama.cpp/build/ggml/src/libggml.a \
-    deps/llama.cpp/build/ggml/src/libggml-base.a \
-    deps/llama.cpp/build/ggml/src/libggml-cpu.a \
-    deps/llama.cpp/build/ggml/src/ggml-blas/libggml-blas.a \
-    -lpthread -ldl -o bin/gemma_cli
+./tests/run_tests.sh
 ```
-- On macOS the extra Objective‑C runtimes (`-framework Foundation`, `-framework QuartzCore`, `-lobjc`) are required when statically linking the Metal backend.
-- On Linux/Windows drop the Apple frameworks and add whatever threading/math libraries your toolchain expects (the example uses `-lpthread -ldl`).
-- If you built shared libraries instead, replace the direct `.a` references with the appropriate `-L/-l` pairs.
 
-### Using CMake (optional)
-If you prefer CMake, add llama.cpp as an external project or set `LLAMA_ROOT` and create a simple `CMakeLists.txt` that links against `llama`. The manual compile above is sufficient for prototyping.
-
-## 5. Run the Model
-```bash
-./bin/gemma_cli models/gemma-3-4b-it-q4_K_M.gguf "List three creative shell automation ideas."
-```
-- First argument: path to your GGUF file. Defaults to `models/gemma-3-text-4b-it-4bit.gguf` if omitted; point it to the f16 file if you skipped quantization.
-- Second argument: optional prompt string. Without it, the CLI prints a usage hint and falls back to a sample prompt.
-- Output streams token-by-token to STDOUT; STDERR surfaces errors (missing model, decode failure, etc.).
-
-## 6. Integrate with GenShell
-- `include/gemma_llama.h` describes the minimal C API: initialize once, call `gemma_llama_generate()` with a callback that pushes tokens into the shell's output buffer, and free resources when shutting down the runner.
-- The shim is stateless between calls, so you can reuse a single `gemma_llama_t` across prompts. Clear the kv-cache per request (already handled inside `gemma_llama_generate`).
-- Adapt the callback to accumulate text until the user accepts it, then emit commands in the REPL.
-
-## 7. Troubleshooting
-- **`failed to load GGUF model`** – ensure the path is correct and the llama.cpp build supports the chosen quantization (Metal requires Q4/K or FP16).
-- **Linker errors (`undefined symbols for architecture arm64`)** – confirm the `llama.cpp` build target matches your host (arm64 vs x86_64) and that `clang++` sees the correct headers/libs.
-- **Slow generation** – bump `runtime.n_threads` before calling `gemma_llama_init`, or convert to a quantized GGUF variant.
-- **Context overflow** – the shim defaults to 4,096 tokens. Increase `runtime.n_ctx` (and ensure the model supports it) when initializing.
-
-With the GGUF ready and the CLI compiled, you can script higher-level workflows or embed the shim directly into the GenShell LLM runner module for a fully native experience.
-
-## 8. Tests
-- The lightweight smoke suite stubs out llama.cpp and exercises `gemma_cli`'s argument handling, and it runs the `ctx_yaml` parser unit tests.
-- Run it from the repo root: `./tests/run_tests.sh`
-- Override toolchain parameters (e.g., `CC` or `CFLAGS`) by exporting them before invoking the script.
+Until automated coverage lands, manually exercise the shell on macOS and Linux before merging significant changes.
