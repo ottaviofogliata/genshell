@@ -1,6 +1,6 @@
-# LLM Sidecar (Gemma via llama.cpp)
+# LLM Sidecar (Qwen via llama.cpp)
 
-GenShell ships with an optional helper binary, `gemma_cli`, that runs a local Gemma model using llama.cpp. The shell must remain safe and responsive when the sidecar is unavailable; integration happens through a narrow shim that generates command suggestions and requires explicit user confirmation (`TAB`) before execution.
+GenShell ships with an optional helper binary, `gemma_cli`, that runs a local Qwen2.5-Coder-3B-Instruct checkpoint through llama.cpp (Gemma remains available for legacy validation). The shell must remain safe and responsive when the sidecar is unavailable; integration happens through a narrow shim that generates command suggestions and requires explicit user confirmation (`TAB`) before execution.
 
 ## Operational Flow
 ```mermaid
@@ -32,21 +32,10 @@ graph TD
    ./build_pc.sh all
    ```
 
-## Preparing Gemma Models
-1. From `deps/llama.cpp`, install Python requirements:
-   ```bash
-   python3 -m pip install -r requirements.txt
-   ```
-2. Download Gemma weights (use `huggingface_hub` or any preferred tooling).
-3. Convert to GGUF and optionally quantise:
-   ```bash
-   python3 convert_hf_to_gguf.py --model <repo> --outfile models/gemma.gguf
-   ./llama-quantize models/gemma.gguf models/gemma-q4.gguf q4_0
-   ```
-
-Store GGUF files under `models/` (ignored by git). Launch the helper directly:
+## Preparing Models
+Model download and quantization steps for both Qwen and Gemma live in `LLM_DOWNLOAD.md`. Store all GGUF files under `models/` (git-ignored). Launch the helper directly once you have a quantized checkpoint:
 ```bash
-./bin/gemma_cli models/gemma-q4.gguf "List a few automation tasks."
+./bin/gemma_cli models/qwen2.5-coder-3b-instruct-q4_k_m.gguf "Write a portable shell test harness outline."
 ```
 
 ## Safety & Sampling Defaults
@@ -59,4 +48,4 @@ Store GGUF files under `models/` (ignored by git). Launch the helper directly:
 - Network access is not required; keep inference fully local to honour repository portability expectations.
 - Log inference errors through the shim but avoid crashing the shell. Treat inference suggestions as advisory.
 
-For implementation notes and sampling defaults, review `src/llm` and `include/gemma_sampling_config.h` (when available).
+For implementation notes and sampling defaults, review `src/llm` and `include/gemma_sampling_config.h` (when available). The helper still lives under the historical `gemma_cli` name while the shim migrates to Qwen-first defaults.

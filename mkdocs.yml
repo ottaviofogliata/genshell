@@ -1,5 +1,5 @@
 site_name: GenShell
-site_description: "Documentation for the GenShell POSIX shell and optional Gemma LLM sidecar."
+site_description: "Documentation for the GenShell POSIX shell and optional Qwen-based LLM sidecar."
 site_url: ""
 repo_url: ""
 nav:
@@ -11,6 +11,7 @@ nav:
       - Practices: development/practices.md
   - Reference:
       - Repository Layout: reference/repo-layout.md
+      - LLM Download Guide: reference/llm-download.md
       - API Reference: api/index.md
   - Contributing:
       - Contributor Guide: contributing/contributor-guide.md

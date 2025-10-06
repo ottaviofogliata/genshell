@@ -1,10 +1,10 @@
 # Contributor Guide
 
 ## Mission in One Paragraph
-GenShell is a ground-up POSIX shell written in C with an opt-in, local LLM sidecar powered by Gemma through llama.cpp. The shell must remain fast, script-compatible, and safe even when the model is unavailable. LLM features live behind a narrow shim and never take over core shell responsibilities.
+GenShell is a ground-up POSIX shell written in C with an opt-in, local LLM sidecar powered by llama.cpp. The default profile targets Qwen2.5-Coder-3B-Instruct, with Gemma retained for legacy validation. The shell must remain fast, script-compatible, and safe even when the model is unavailable. LLM features live behind a narrow shim and never take over core shell responsibilities.
 
 ## Expected User Experience
-A classifier routes natural-language queries to the LLM helper while traditional shell commands run immediately. Suggestions are rendered in the CLI and require an explicit `TAB` confirmation before execution. See [LLM Sidecar](../guides/llm-sidecar.md) for the full pipeline diagram and safety defaults.
+A classifier routes natural-language queries to the LLM helper while traditional shell commands run immediately. Suggestions are rendered in the CLI and require an explicit `TAB` confirmation before execution. See [LLM Sidecar](../guides/llm-sidecar.md) for the full pipeline diagram and safety defaults, and `LLM_DOWNLOAD.md` at the repo root for download/quantization steps.
 
 ## Coding Expectations
 - C files (`*.c`) compile as C17; C++ files (`*.cpp`) compile as C++20.
@@ -14,7 +14,7 @@ A classifier routes natural-language queries to the LLM helper while traditional
 - Keep functions focused (roughly < 80 LOC). Refactor into helpers when they grow.
 
 ## Safety & Sampling Defaults
-- Default prompt sampling is tuned for balanced chat; review the long comment block in `gemma_cli.c` before altering behaviour.
+- Default prompt sampling is tuned for balanced chat; review the long comment block in `gemma_cli.c` (wired to Qwen2.5-Coder-3B-Instruct by default) before altering behaviour.
 - The logit-bias safety list (e.g., `rm -rf /`) lives in `gemma_cli.c`. Extend or override it per deployment.
 - When exposing new model features, add switches to `gemma_sampling_config` and document them alongside existing parameters.
 
@@ -27,7 +27,7 @@ A classifier routes natural-language queries to the LLM helper while traditional
 ## Contribution Checklist
 - Confirm instructions in README, architecture docs, and this site remain accurate after changes.
 - Keep llama.cpp as a clean submodule (no downstream patches unless upstreamed).
-- Verify `bin/gemma_cli` runs end-to-end on at least one platform when touching LLM code.
+- Verify `bin/gemma_cli` runs end-to-end on at least one platform when touching LLM code, using the Qwen2.5-Coder-3B-Instruct checkpoint unless you are explicitly testing legacy Gemma flows.
 - Run clang-format on modified files.
 - Update this guide or architecture docs when adjusting build flow or directory layout.
 

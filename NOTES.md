@@ -1,3 +1,5 @@
+[2025-10-06 14:30:29] > Documented Qwen2.5-Coder-3B-Instruct as the default sidecar, moved LLM download + quantization steps into LLM_DOWNLOAD.md, and refreshed README/MkDocs to point at the consolidated guide.
+
 # Notes Log
 _Usage guidelines live in AGENTS.md section 6._ \
 _Newest log at the top of the file._

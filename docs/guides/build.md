@@ -1,6 +1,6 @@
 # Build & Platform Guide
 
-GenShell targets macOS (arm64 + Metal) and Linux (x86_64/arm64). The core shell is portable across POSIX-like environments; the Gemma helper depends on llama.cpp build flags and optional accelerators. This guide expands on the quick-start instructions.
+GenShell targets macOS (arm64 + Metal) and Linux (x86_64/arm64). The core shell is portable across POSIX-like environments; the llama.cpp helper (Qwen2.5-Coder-3B-Instruct by default) depends on platform-specific acceleration flags. This guide expands on the quick-start instructions.
 
 ## Toolchains
 - **Compilers:** Clang or GCC with C17 support. Clang is assumed by the helper scripts.
@@ -41,7 +41,7 @@ The scripts configure llama.cpp through CMake, build the required static librari
 
 ## Environment Layout
 ```
-bin/          # genshell, gemma_cli, additional tools
+bin/          # genshell, gemma_cli sidecar, additional tools
 build/obj/    # Intermediate object files
 build/logs/   # Build logs (if enabled by the helpers)
 models/       # GGUF weights (ignored by git)
@@ -49,7 +49,7 @@ models/       # GGUF weights (ignored by git)
 
 ## Common Issues
 - **Missing clang-format:** The repo expects contributors to format patched files. Install `clang-format` for your platform and re-run on touched files before submitting patches.
-- **Uninitialised submodule:** `deps/llama.cpp` must be present before building the Gemma helper. Run `git submodule update --init --recursive`.
+- **Uninitialised submodule:** `deps/llama.cpp` must be present before building the LLM helper. Run `git submodule update --init --recursive`.
 - **Metal vs. CPU builds:** macOS builds default to Metal. Pass `LLM_CXXFLAGS="-DGGML_USE_CPU"` to force CPU mode if required.
 
 ## Running
@@ -60,7 +60,9 @@ Once the build succeeds, start the shell directly:
 
 Run the demo assistant with a GGUF model:
 ```bash
-./bin/gemma_cli models/<model>.gguf "List automation tasks"
+./bin/gemma_cli models/qwen2.5-coder-3b-instruct-q4_k_m.gguf "List automation tasks"
 ```
+
+Full download and quantization steps live in `LLM_DOWNLOAD.md`.
 
 See [LLM Sidecar](llm-sidecar.md) for conversion, quantisation, and safety notes.

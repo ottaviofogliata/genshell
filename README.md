@@ -1,6 +1,6 @@
 # GenShell
 
-GenShell is a ground-up POSIX-style shell written in C with an optional local LLM sidecar powered by llama.cpp. The primary goal today is correctness and safety in the traditional REPL path; model-assisted workflows remain strictly opt-in and live behind a narrow shim.
+GenShell is a ground-up POSIX-style shell written in C with an optional local LLM sidecar powered by llama.cpp. The primary goal today is correctness and safety in the traditional REPL path; model-assisted workflows remain strictly opt-in and live behind a narrow shim. The default sidecar profile is Qwen2.5-Coder-3B-Instruct, with Gemma retained as a legacy option.
 
 ## 1. Prerequisites
 - Clang or GCC with C17 support (Clang is used in all helper scripts).
@@ -61,25 +61,20 @@ src/
     shell/                 # REPL, parser, executor, builtins
   ctx/                     # Context collectors and YAML helpers
   infra/                   # Low-level OS plumbing (placeholders)
-  llm/                     # llama.cpp shim and demo CLI
-bin/                       # Build artefacts (genshell, gemma_cli, ...)
+  llm/                     # llama.cpp shim and helper CLI (Qwen-default)
+bin/                       # Build artefacts (genshell, gemma_cli sidecar, ...)
 models/                    # GGUF checkpoints (ignored by git)
 tests/                     # Manual smoke tests and harness stubs
 ```
 
 ## 5. Optional LLM Sidecar
-The llama.cpp-based helper (`bin/gemma_cli`) remains available for experimentation. After building the static libs (see §2) you can run:
+The llama.cpp-based helper (`bin/gemma_cli`) remains available for experimentation. The default prompt stack now targets the Qwen2.5-Coder-3B-Instruct checkpoint (quantized to GGUF). After building the static libs (see §2) you can run:
 
 ```bash
-./bin/gemma_cli models/<model>.gguf "List a few automation tasks."
+./bin/gemma_cli models/qwen2.5-coder-3b-instruct-q4_k_m.gguf "Write a portable shell test harness outline."
 ```
 
-Preparing Gemma checkpoints follows the standard llama.cpp workflow:
-1. Install Python requirements inside `deps/llama.cpp` (`python3 -m pip install -r requirements.txt`).
-2. Download weights with `huggingface_hub` or your preferred tooling.
-3. Convert to GGUF via `convert_hf_to_gguf.py` and optionally quantise with `llama-quantize`.
-
-These steps mirror the upstream documentation; adjust paths or quantisation levels to fit your hardware.
+Detailed download and quantization steps for both Qwen and the legacy Gemma models live in `LLM_DOWNLOAD.md`. The helper still ships under the historical `gemma_cli` name until the shim is refactored; pass the model path as the first argument to point at any other checkpoint.
 
 ## 6. Development Notes
 - Keep each builtin in its own `src/kernel/shell/builtins/<name>.c` file with a descriptive comment explaining behaviour and edge cases.
@@ -157,7 +152,7 @@ Use this checklist the moment GenShell is published and you cut a release. These
 
 - Release Artifacts
   - Build binaries: `./build_mac.sh` (macOS) and `./build_pc.sh` (Linux/WSL). Optionally `*_complete.sh` to include LLM helper.
-  - Smoke test: `./bin/genshell` and, if built, `./bin/gemma_cli models/<model>.gguf "hello"`.
+  - Smoke test: `./bin/genshell` and, if built, `./bin/gemma_cli models/qwen2.5-coder-3b-instruct-q4_k_m.gguf "hello"` (adjust the path if you are validating a different checkpoint).
   - Tag and create a GitHub Release (e.g., `v0.1.0`), attach built artifacts from `bin/`.
 
 - Issues & Community

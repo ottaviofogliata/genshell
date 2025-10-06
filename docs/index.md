@@ -1,6 +1,6 @@
 # GenShell Overview
 
-GenShell is a ground-up POSIX-style shell written in C with an optional local LLM sidecar powered by llama.cpp. The shell focuses on correctness, scripting compatibility, and safety; the AI helper remains opt-in and isolated behind a narrow shim so the REPL path stays fast and predictable.
+GenShell is a ground-up POSIX-style shell written in C with an optional local LLM sidecar powered by llama.cpp. The shell focuses on correctness, scripting compatibility, and safety; the AI helper remains opt-in and isolated behind a narrow shim so the REPL path stays fast and predictable. Qwen2.5-Coder-3B-Instruct is the default checkpoint, with Gemma retained for legacy validation.
 
 ## Mission
 - Deliver a minimal, reliable POSIX shell core with strategy-based builtins and traditional pipeline execution.
@@ -10,7 +10,7 @@ GenShell is a ground-up POSIX-style shell written in C with an optional local LL
 ## Feature Highlights
 - Interactive shell with `PATH` lookup, pipes, basic redirections, and environment/tilde expansion.
 - Builtins dispatch table covering `cd`, `exit`, `pwd`, `echo`, `export`, `unset`, and `umask`, each implemented in its own translation unit.
-- Optional Gemma-based helper (`gemma_cli`) via llama.cpp, with safety hooks for prompt filtering and logit biasing.
+- Optional Qwen-based helper (`gemma_cli`, pending rename) via llama.cpp, with safety hooks for prompt filtering and logit biasing.
 - Portable build scripts for macOS (Metal) and Linux/Windows (CPU-only) targets.
 
 ## Quick Start
@@ -67,8 +67,8 @@ src/
     shell/                 # REPL, parser, executor, builtins
   ctx/                     # Context collectors and YAML helpers
   infra/                   # Low-level OS plumbing (placeholders)
-  llm/                     # llama.cpp shim and demo CLI
-bin/                       # Build artefacts (genshell, gemma_cli, ...)
+  llm/                     # llama.cpp shim and helper CLI (Qwen-default)
+bin/                       # Build artefacts (genshell, gemma_cli sidecar, ...)
 models/                    # GGUF checkpoints (ignored by git)
 tests/                     # Manual smoke tests and harness stubs
 ```

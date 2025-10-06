@@ -3,7 +3,7 @@
 [./README.md](./README.md)
 
 ## 1. Mission in One Paragraph
-GenShell is a ground-up POSIX shell written in C with an opt-in, local LLM sidecar powered by SLM (gemma 3 actually) through llama.cpp. The shell must remain fast, script-compatible, and safe even when the model is unavailable. LLM features live behind a narrow shim and never bleed into core shell responsibilities.
+GenShell is a ground-up POSIX shell written in C with an opt-in, local LLM sidecar powered by SLM (Qwen2.5-Coder-3B-Instruct by default, Gemma retained for legacy workflows) through llama.cpp. The shell must remain fast, script-compatible, and safe even when the model is unavailable. LLM features live behind a narrow shim and never bleed into core shell responsibilities.
 
 Note for automated contributors: AI agents working on this repository must use the repository documentation in `./docs` as context for code changes, design decisions, and explanations.
 
@@ -34,7 +34,7 @@ graph TD
 ---
 
 ## 3. Safety & Sampling Defaults
-- Default prompt sampling is tuned for balanced chat (see the long comment block in `gemma_cli.c`).
+- Default prompt sampling is tuned for balanced chat in `gemma_cli.c` (now wired to Qwen2.5-Coder-3B-Instruct by default).
 - Logit bias safety list (e.g., `rm -rf /`) lives in `gemma_cli.c`; expand or override per deployment.
 - When exposing new model features, add knobs to `gemma_sampling_config` and document them alongside the existing parameters.
 
@@ -51,7 +51,7 @@ graph TD
 ## 5. Contribution Checklist
 - Confirm instructions in README/ARCH remain truthful.
 - Keep llama.cpp as a clean submodule (no local edits unless upstreamed).
-- Verify `bin/gemma_cli` runs end-to-end on at least one platform.
+- Verify `bin/gemma_cli` runs end-to-end on at least one platform using the Qwen2.5-Coder-3B-Instruct checkpoint.
 - Run clang-format on modified files.
 - Update this file or ARCH.md when changing architecture, build flow, or directory layout.
 
