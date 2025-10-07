@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+#
+# Enforce clang-format on staged C/C++ sources before committing.
+#
+# Usage:
+#   git config core.hooksPath hooks   # run once to enable repository hooks
+#
+# The hook formats staged .c/.h/.cpp/.hpp files in place and re-stages them.
+
+set -euo pipefail
+
+if ! command -v clang-format >/dev/null 2>&1; then
+    echo "pre-commit: clang-format not found in PATH; skipping format check." >&2
+    exit 0
+fi
+
+mapfile -d '' files < <(git diff --cached --name-only --diff-filter=ACMR -z -- '*.c' '*.h' '*.cpp' '*.hpp' || true)
+
+if [[ ${#files[@]} -eq 0 ]]; then
+    exit 0
+fi
+
+for file in "${files[@]}"; do
+    if [[ -f "$file" ]]; then
+        clang-format -i "$file"
+        git add "$file"
+        echo "pre-commit: formatted $file"
+    fi
+done
+
+exit 0

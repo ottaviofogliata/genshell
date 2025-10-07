@@ -30,6 +30,14 @@ SHELL_SOURCES=(
     src/kernel/shell/builtins/unset.c
 )
 
+LLM_SOURCES=(
+    src/llm/gemma_cli.c
+    src/llm/gemma_runner.c
+    src/llm/llm_chat_template.c
+    src/llm/command_stream_parser.c
+    src/llm/templates/qwen_chat_template.c
+)
+
 obj_name() {
     local src="$1"
     local stripped="${src%.c}"
@@ -51,21 +59,24 @@ build_shell() {
 
 build_gemma_cli() {
     echo "==> Building gemma_cli"
-    local gemma_cli_obj
-    gemma_cli_obj=$(obj_name "src/llm/gemma_cli.c")
+    local llm_objects=()
+    for src in "${LLM_SOURCES[@]}"; do
+        local obj
+        obj=$(obj_name "$src")
+        "$CC" $LLM_CFLAGS \
+            -Iinclude -I"deps/llama.cpp" -I"deps/llama.cpp/include" -I"deps/llama.cpp/ggml/include" \
+            -c "$src" -o "$obj"
+        llm_objects+=("$obj")
+    done
     local gemma_llama_obj
     gemma_llama_obj=$(obj_name "src/llm/gemma_llama.cpp")
-
-    "$CC" $LLM_CFLAGS \
-        -Iinclude -I"deps/llama.cpp" -I"deps/llama.cpp/include" -I"deps/llama.cpp/ggml/include" \
-        -c src/llm/gemma_cli.c -o "$gemma_cli_obj"
 
     "$CXX" $LLM_CXXFLAGS \
         -Iinclude -I"deps/llama.cpp" -I"deps/llama.cpp/include" -I"deps/llama.cpp/ggml/include" \
         -c src/llm/gemma_llama.cpp -o "$gemma_llama_obj"
 
     "$CXX" -std=c++20 \
-        "$gemma_llama_obj" "$gemma_cli_obj" \
+        "$gemma_llama_obj" "${llm_objects[@]}" \
         deps/llama.cpp/build/src/libllama.a \
         deps/llama.cpp/build/ggml/src/libggml.a \
         deps/llama.cpp/build/ggml/src/libggml-base.a \

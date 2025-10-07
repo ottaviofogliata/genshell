@@ -1,8 +1,10 @@
-[2025-10-06 14:30:29] > Documented Qwen2.5-Coder-3B-Instruct as the default sidecar, moved LLM download + quantization steps into LLM_DOWNLOAD.md, and refreshed README/MkDocs to point at the consolidated guide.
+[2025-10-07 22:08:42] > Refactored the LLM helper into focused modules: introduced a chat-template interface with a Qwen implementation, split the streaming JSON parser and llama runtime setup into reusable helpers, reworked gemma_cli.c to orchestrate those layers, and refreshed the build scripts to compile the new units.
 
-# Notes Log
-_Usage guidelines live in AGENTS.md section 6._ \
-_Newest log at the top of the file._
+[2025-10-07 21:45:33] > Added a repository-managed pre-commit hook that runs clang-format over staged C/C++ sources and restages them to keep formatting consistent.
+
+[2025-10-07 21:36:47] > Updated src/llm/gemma_cli.c to build the Qwen2.5 chat template with a command-only system prompt, stream just the generated CLI commands from the JSON response, add a raw-output fallback when parsing fails, and switch the helper default to the Qwen checkpoint.
+
+[2025-10-06 14:30:29] > Documented Qwen2.5-Coder-3B-Instruct as the default sidecar, moved LLM download + quantization steps into LLM_DOWNLOAD.md, and refreshed README/MkDocs to point at the consolidated guide.
 
 [2025-10-05 19:33:09] > Added a MkDocs + Material documentation site (docs/ + mkdocs.yml), ported existing README and contributor guidance into structured pages, introduced a Doxygen config that outputs to docs/api for API reference, and documented the new workflow in README.md.
 
